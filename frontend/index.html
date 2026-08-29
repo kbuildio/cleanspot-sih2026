@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CleanSpot — Live Map</title>
+
+  <!-- Leaflet's CSS (styling for the map) -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  />
+
+  <style>
+    /* Basic page styling */
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+    }
+
+    header {
+      background-color: #2e7d32; /* green, matches the sanitation theme */
+      color: white;
+      padding: 16px;
+      text-align: center;
+    }
+
+    #map {
+      /* The map needs an explicit height or it won't show up at all */
+      height: 85vh;
+      width: 100%;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>CleanSpot</h1>
+    <p>See it. Report it. Resolve it.</p>
+  </header>
+
+  <!-- This empty div is where Leaflet will draw the map -->
+  <div id="map"></div>
+
+  <!-- Leaflet's JavaScript (the actual map logic) -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <script>
+    // 1. Create a map, centered on a starting location.
+    //    These numbers are latitude and longitude — right now set to Lucknow.
+    //    Change them to your own city's coordinates if you like.
+    const map = L.map('map').setView([26.8467, 80.9462], 13);
+
+    // 2. Add the actual map imagery (the "tiles") from OpenStreetMap — this is free, no API key needed.
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    // 3. Add one example marker, just to prove markers work.
+    //    Later, this is where real user reports will appear.
+    L.marker([26.8467, 80.9462])
+      .addTo(map)
+      .bindPopup('This is where a report would show up.');
+  </script>
+
+</body>
+</html>
