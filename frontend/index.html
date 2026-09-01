@@ -5,30 +5,42 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>CleanSpot — Live Map</title>
 
-  <!-- Leaflet's CSS (styling for the map) -->
   <link
     rel="stylesheet"
     href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
   />
 
   <style>
-    /* Basic page styling */
     body {
       margin: 0;
       font-family: Arial, sans-serif;
     }
 
     header {
-      background-color: #2e7d32; /* green, matches the sanitation theme */
+      background-color: #2e7d32;
       color: white;
       padding: 16px;
       text-align: center;
     }
 
     #map {
-      /* The map needs an explicit height or it won't show up at all */
       height: 85vh;
       width: 100%;
+    }
+
+    /* Styling for the little report form that appears in the popup */
+    .report-form textarea {
+      width: 180px;
+      margin-bottom: 8px;
+    }
+
+    .report-form button {
+      background-color: #2e7d32;
+      color: white;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 4px;
+      cursor: pointer;
     }
   </style>
 </head>
@@ -36,31 +48,62 @@
 
   <header>
     <h1>CleanSpot</h1>
-    <p>See it. Report it. Resolve it.</p>
+    <p>See it. Report it. Resolve it. (Click anywhere on the map to report)</p>
   </header>
 
-  <!-- This empty div is where Leaflet will draw the map -->
   <div id="map"></div>
 
-  <!-- Leaflet's JavaScript (the actual map logic) -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <script>
-    // 1. Create a map, centered on a starting location.
-    //    These numbers are latitude and longitude — right now set to Lucknow.
-    //    Change them to your own city's coordinates if you like.
+    // 1. Create the map, centered on a starting location.
     const map = L.map('map').setView([26.8467, 80.9462], 13);
 
-    // 2. Add the actual map imagery (the "tiles") from OpenStreetMap — this is free, no API key needed.
+    // 2. Add the map imagery from OpenStreetMap.
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
 
-    // 3. Add one example marker, just to prove markers work.
-    //    Later, this is where real user reports will appear.
-    L.marker([26.8467, 80.9462])
-      .addTo(map)
-      .bindPopup('This is where a report would show up.');
+    // 3. NEW: Listen for clicks anywhere on the map.
+    //    "e" (the event) tells us exactly where the click happened.
+    map.on('click', function (e) {
+      const lat = e.latlng.lat;
+      const lng = e.latlng.lng;
+
+      // Build a small form as an HTML string — this becomes the popup's content.
+      const formHtml = `
+        <div class="report-form">
+          <strong>New Report</strong><br><br>
+          <textarea id="reportDesc" rows="3" placeholder="Describe the problem..."></textarea><br>
+          <input type="file" id="reportPhoto" accept="image/*"><br><br>
+          <button id="submitReportBtn">Submit Report</button>
+        </div>
+      `;
+
+      // Open a popup at the clicked location, showing that form.
+      const popup = L.popup()
+        .setLatLng(e.latlng)
+        .setContent(formHtml)
+        .openOn(map);
+
+      // The form's button doesn't exist in the page until the popup renders,
+      // so we wait briefly, then "listen" for a click on it.
+      setTimeout(() => {
+        document.getElementById('submitReportBtn').addEventListener('click', function () {
+          const description = document.getElementById('reportDesc').value || 'No description provided';
+
+          // For now (no database yet), we just place a permanent marker
+          // on the map showing what was typed. Next milestone: actually
+          // save this to a database instead of just showing it here.
+          L.marker([lat, lng])
+            .addTo(map)
+            .bindPopup(`<strong>Report</strong><br>${description}`)
+            .openPopup();
+
+          map.closePopup();
+        });
+      }, 100);
+    });
   </script>
 
 </body>
