@@ -28,7 +28,6 @@
       width: 100%;
     }
 
-    /* Styling for the little report form that appears in the popup */
     .report-form textarea {
       width: 180px;
       margin-bottom: 8px;
@@ -56,21 +55,40 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <script>
-    // 1. Create the map, centered on a starting location.
+    // Where our backend lives. We'll change this later when we host it online.
+    const API_URL = 'http://localhost:3000';
+
     const map = L.map('map').setView([26.8467, 80.9462], 13);
 
-    // 2. Add the map imagery from OpenStreetMap.
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
 
-    // 3. NEW: Listen for clicks anywhere on the map.
-    //    "e" (the event) tells us exactly where the click happened.
+    // --- NEW: a helper function that draws one marker on the map for a report ---
+    function addReportMarker(report) {
+      L.marker([report.lat, report.lng])
+        .addTo(map)
+        .bindPopup(`<strong>Report</strong><br>${report.description}`);
+    }
+
+    // --- NEW: on page load, ask the backend for every saved report, and draw them all ---
+    async function loadExistingReports() {
+      try {
+        const response = await fetch(`${API_URL}/reports`);
+        const reports = await response.json();
+        reports.forEach(addReportMarker);
+      } catch (error) {
+        console.log('Could not load reports — is the backend server running?', error);
+      }
+    }
+
+    loadExistingReports();   // runs immediately when the page opens
+
+    // Click-to-report, same as before, but the submit button now saves for real
     map.on('click', function (e) {
       const lat = e.latlng.lat;
       const lng = e.latlng.lng;
 
-      // Build a small form as an HTML string — this becomes the popup's content.
       const formHtml = `
         <div class="report-form">
           <strong>New Report</strong><br><br>
@@ -80,27 +98,31 @@
         </div>
       `;
 
-      // Open a popup at the clicked location, showing that form.
       const popup = L.popup()
         .setLatLng(e.latlng)
         .setContent(formHtml)
         .openOn(map);
 
-      // The form's button doesn't exist in the page until the popup renders,
-      // so we wait briefly, then "listen" for a click on it.
       setTimeout(() => {
-        document.getElementById('submitReportBtn').addEventListener('click', function () {
+        document.getElementById('submitReportBtn').addEventListener('click', async function () {
           const description = document.getElementById('reportDesc').value || 'No description provided';
 
-          // For now (no database yet), we just place a permanent marker
-          // on the map showing what was typed. Next milestone: actually
-          // save this to a database instead of just showing it here.
-          L.marker([lat, lng])
-            .addTo(map)
-            .bindPopup(`<strong>Report</strong><br>${description}`)
-            .openPopup();
+          // --- NEW: send this report to the backend instead of just drawing a marker locally ---
+          try {
+            const response = await fetch(`${API_URL}/reports`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ description, lat, lng })
+            });
 
-          map.closePopup();
+            const savedReport = await response.json();
+
+            // Only draw the marker once the backend confirms it was saved
+            addReportMarker(savedReport);
+            map.closePopup();
+          } catch (error) {
+            alert('Could not save report — is the backend server running?');
+          }
         });
       }, 100);
     });
