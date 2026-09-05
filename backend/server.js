@@ -19,6 +19,7 @@ const reportSchema = new mongoose.Schema({
   lat: { type: Number, required: true },
   lng: { type: Number, required: true },
   photoUrl: { type: String, default: null },
+  resolved: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now }
 });
 
@@ -91,14 +92,20 @@ function groupReportsIntoAreas(reports) {
     const avgLat = group.reduce((sum, r) => sum + r.lat, 0) / group.length;
     const avgLng = group.reduce((sum, r) => sum + r.lng, 0) / group.length;
 
-    // Simple status rule for now — refine later
-    let status = 'YELLOW';
-    if (group.length >= 3) status = 'RED';
+    // Count how many reports in this group are still unresolved
+    const unresolvedCount = group.filter((r) => !r.resolved).length;
+
+    // If every report in the group has been resolved, the area is GREEN.
+    // Otherwise, status depends on how many are still unresolved.
+    let status = 'GREEN';
+    if (unresolvedCount === 1 || unresolvedCount === 2) status = 'YELLOW';
+    if (unresolvedCount >= 3) status = 'RED';
 
     areas.push({
       lat: avgLat,
       lng: avgLng,
       count: group.length,
+      unresolvedCount: unresolvedCount,
       status: status
     });
   });
@@ -106,10 +113,25 @@ function groupReportsIntoAreas(reports) {
   return areas;
 }
 
-// --- NEW: route that returns the grouped area statuses ---
+// --- NEW: mark a specific report as resolved ---
+app.patch('/reports/:id/resolve', async (req, res) => {
+  try {
+    const updatedReport = await Report.findByIdAndUpdate(
+      req.params.id,
+      { resolved: true },
+      { new: true }  // return the updated version, not the old one
+    );
+    res.json(updatedReport);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to resolve report' });
+  }
+});
+
 app.get('/status', async (req, res) => {
   try {
-    const reports = await Report.find();
+    // Fetch ALL reports (resolved and unresolved), so fully-resolved
+    // areas can show GREEN instead of just disappearing entirely.
+    const reports = await Report.find({});
     const areas = groupReportsIntoAreas(reports);
     res.json(areas);
   } catch (error) {

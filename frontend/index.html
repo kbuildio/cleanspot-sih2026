@@ -5,35 +5,43 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>CleanSpot — Live Map</title>
 
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-  />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 
   <style>
-    body {
-      margin: 0;
-      font-family: Arial, sans-serif;
-    }
+    body { margin: 0; font-family: Arial, sans-serif; }
 
     header {
       background-color: #2e7d32;
       color: white;
       padding: 16px;
       text-align: center;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
     }
 
-    #map {
-      height: 85vh;
-      width: 100%;
+    header div.header-text { flex: 1; }
+
+    #authorityToggle {
+      background-color: white;
+      color: #2e7d32;
+      border: none;
+      padding: 8px 14px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: bold;
     }
 
-    .report-form textarea {
-      width: 180px;
-      margin-bottom: 8px;
+    #authorityToggle.active {
+      background-color: #1b5e20;
+      color: white;
     }
 
-    .report-form button {
+    #map { height: 85vh; width: 100%; }
+
+    .report-form textarea { width: 180px; margin-bottom: 8px; }
+
+    .report-form button, .resolve-btn {
       background-color: #2e7d32;
       color: white;
       border: none;
@@ -41,13 +49,18 @@
       border-radius: 4px;
       cursor: pointer;
     }
+
+    .resolve-btn { margin-top: 6px; }
   </style>
 </head>
 <body>
 
   <header>
-    <h1>CleanSpot</h1>
-    <p>See it. Report it. Resolve it. (Click anywhere on the map to report)</p>
+    <div class="header-text">
+      <h1>CleanSpot</h1>
+      <p>See it. Report it. Resolve it. (Click anywhere on the map to report)</p>
+    </div>
+    <button id="authorityToggle">Login as Authority</button>
   </header>
 
   <div id="map"></div>
@@ -55,15 +68,24 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <script>
-    // Where our backend lives. We'll change this later when we host it online.
     const API_URL = 'http://localhost:3000';
 
-    // Cloudinary settings for photo uploads
     const CLOUDINARY_CLOUD_NAME = 'bbfwd8ul';
     const CLOUDINARY_UPLOAD_PRESET = 'gpw8xhja';
 
-    // Uploads a photo file directly to Cloudinary, and returns the resulting web URL.
-    // Returns null if no file was chosen, so a report can still be submitted without a photo.
+    const map = L.map('map').setView([26.8467, 80.9462], 13);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    // --- NEW: whether "authority mode" is currently on ---
+    let isAuthority = false;
+
+    // --- NEW: layer groups let us clear and redraw markers/circles cleanly ---
+    const reportLayer = L.layerGroup().addTo(map);
+    const statusLayer = L.layerGroup().addTo(map);
+
     async function uploadPhotoToCloudinary(file) {
       if (!file) return null;
 
@@ -77,27 +99,38 @@
       );
 
       const data = await response.json();
-      return data.secure_url;  // this is the public link to the uploaded photo
+      return data.secure_url;
     }
 
-    const map = L.map('map').setView([26.8467, 80.9462], 13);
+    // --- NEW: mark a report as resolved, then redraw everything ---
+    async function resolveReport(reportId) {
+      try {
+        await fetch(`${API_URL}/reports/${reportId}/resolve`, { method: 'PATCH' });
+        refreshEverything();  // redraw markers + status so the change shows immediately
+      } catch (error) {
+        alert('Could not mark as resolved — is the backend server running?');
+      }
+    }
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap contributors'
-    }).addTo(map);
-
-    // --- NEW: a helper function that draws one marker on the map for a report ---
     function addReportMarker(report) {
       const photoHtml = report.photoUrl
         ? `<br><img src="${report.photoUrl}" style="width:150px; margin-top:6px; border-radius:4px;">`
         : '';
 
+      const statusText = report.resolved
+        ? `<br><strong style="color:#2e7d32;">Resolved</strong>`
+        : '';
+
+      // Only show the "Mark Resolved" button if authority mode is on AND it isn't resolved yet
+      const resolveButtonHtml = (isAuthority && !report.resolved)
+        ? `<br><button class="resolve-btn" onclick="resolveReport('${report._id}')">Mark Resolved</button>`
+        : '';
+
       L.marker([report.lat, report.lng])
-        .addTo(map)
-        .bindPopup(`<strong>Report</strong><br>${report.description}${photoHtml}`);
+        .addTo(reportLayer)
+        .bindPopup(`<strong>Report</strong><br>${report.description}${photoHtml}${statusText}${resolveButtonHtml}`);
     }
 
-    // --- NEW: on page load, ask the backend for every saved report, and draw them all ---
     async function loadExistingReports() {
       try {
         const response = await fetch(`${API_URL}/reports`);
@@ -108,33 +141,31 @@
       }
     }
 
-    // --- NEW: ask the backend for grouped area statuses, and draw a colored circle for each ---
     async function loadAreaStatus() {
       try {
         const response = await fetch(`${API_URL}/status`);
         const areas = await response.json();
 
         areas.forEach((area) => {
-          // Pick a color based on the status the backend calculated
-          const color = area.status === 'RED' ? '#e53935' : '#fdd835';
+          let color = '#fdd835';  // YELLOW default
+          if (area.status === 'RED') color = '#e53935';
+          if (area.status === 'GREEN') color = '#43a047';
 
           L.circle([area.lat, area.lng], {
-            radius: 50,         // matches GROUPING_RADIUS_METERS on the backend
+            radius: 50,
             color: color,
             fillColor: color,
             fillOpacity: 0.25,
-            interactive: false   // lets map clicks pass through the circle instead of being absorbed by it
-          })
-            .addTo(map);
+            interactive: false
+          }).addTo(statusLayer);
 
-          // A small clickable dot at the center, just to show status info without blocking the whole area
           L.circleMarker([area.lat, area.lng], {
             radius: 6,
             color: color,
             fillColor: color,
             fillOpacity: 1
           })
-            .addTo(map)
+            .addTo(statusLayer)
             .bindPopup(`<strong>${area.status}</strong><br>${area.count} report(s) in this area`);
         });
       } catch (error) {
@@ -142,10 +173,24 @@
       }
     }
 
-    loadExistingReports();   // runs immediately when the page opens
-    loadAreaStatus();        // runs immediately too, draws the colored zones
+    // --- NEW: clears everything currently drawn, then reloads it fresh from the backend ---
+    function refreshEverything() {
+      reportLayer.clearLayers();
+      statusLayer.clearLayers();
+      loadExistingReports();
+      loadAreaStatus();
+    }
 
-    // Click-to-report, same as before, but the submit button now saves for real
+    refreshEverything();  // initial load when the page opens
+
+    // --- NEW: toggle authority mode on/off ---
+    document.getElementById('authorityToggle').addEventListener('click', function () {
+      isAuthority = !isAuthority;
+      this.classList.toggle('active', isAuthority);
+      this.textContent = isAuthority ? 'Authority Mode: ON' : 'Login as Authority';
+      refreshEverything();  // redraw so Resolve buttons appear/disappear correctly
+    });
+
     map.on('click', function (e) {
       const lat = e.latlng.lat;
       const lng = e.latlng.lng;
@@ -167,10 +212,9 @@
       setTimeout(() => {
         document.getElementById('submitReportBtn').addEventListener('click', async function () {
           const description = document.getElementById('reportDesc').value || 'No description provided';
-          const photoFile = document.getElementById('reportPhoto').files[0];  // the chosen file, if any
+          const photoFile = document.getElementById('reportPhoto').files[0];
 
           try {
-            // Upload the photo first (if one was chosen), and get back its URL
             const photoUrl = await uploadPhotoToCloudinary(photoFile);
 
             const response = await fetch(`${API_URL}/reports`, {
@@ -179,14 +223,9 @@
               body: JSON.stringify({ description, lat, lng, photoUrl })
             });
 
-            const savedReport = await response.json();
-
-            // Only draw the marker once the backend confirms it was saved
-            addReportMarker(savedReport);
+            await response.json();
             map.closePopup();
-
-            // Recalculate area status now that a new report exists
-            loadAreaStatus();
+            refreshEverything();  // redraw so the new report + updated status both show
           } catch (error) {
             alert('Could not save report — is the backend server running?');
           }
