@@ -58,6 +58,28 @@
     // Where our backend lives. We'll change this later when we host it online.
     const API_URL = 'http://localhost:3000';
 
+    // Cloudinary settings for photo uploads
+    const CLOUDINARY_CLOUD_NAME = 'bbfwd8ul';
+    const CLOUDINARY_UPLOAD_PRESET = 'gpw8xhja';
+
+    // Uploads a photo file directly to Cloudinary, and returns the resulting web URL.
+    // Returns null if no file was chosen, so a report can still be submitted without a photo.
+    async function uploadPhotoToCloudinary(file) {
+      if (!file) return null;
+
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+
+      const response = await fetch(
+        `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
+        { method: 'POST', body: formData }
+      );
+
+      const data = await response.json();
+      return data.secure_url;  // this is the public link to the uploaded photo
+    }
+
     const map = L.map('map').setView([26.8467, 80.9462], 13);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -66,9 +88,13 @@
 
     // --- NEW: a helper function that draws one marker on the map for a report ---
     function addReportMarker(report) {
+      const photoHtml = report.photoUrl
+        ? `<br><img src="${report.photoUrl}" style="width:150px; margin-top:6px; border-radius:4px;">`
+        : '';
+
       L.marker([report.lat, report.lng])
         .addTo(map)
-        .bindPopup(`<strong>Report</strong><br>${report.description}`);
+        .bindPopup(`<strong>Report</strong><br>${report.description}${photoHtml}`);
     }
 
     // --- NEW: on page load, ask the backend for every saved report, and draw them all ---
@@ -141,13 +167,16 @@
       setTimeout(() => {
         document.getElementById('submitReportBtn').addEventListener('click', async function () {
           const description = document.getElementById('reportDesc').value || 'No description provided';
+          const photoFile = document.getElementById('reportPhoto').files[0];  // the chosen file, if any
 
-          // --- NEW: send this report to the backend instead of just drawing a marker locally ---
           try {
+            // Upload the photo first (if one was chosen), and get back its URL
+            const photoUrl = await uploadPhotoToCloudinary(photoFile);
+
             const response = await fetch(`${API_URL}/reports`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ description, lat, lng })
+              body: JSON.stringify({ description, lat, lng, photoUrl })
             });
 
             const savedReport = await response.json();

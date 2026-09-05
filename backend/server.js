@@ -18,6 +18,7 @@ const reportSchema = new mongoose.Schema({
   description: { type: String, required: true },
   lat: { type: Number, required: true },
   lng: { type: Number, required: true },
+  photoUrl: { type: String, default: null },
   createdAt: { type: Date, default: Date.now }
 });
 
@@ -25,8 +26,8 @@ const Report = mongoose.model('Report', reportSchema);
 
 app.post('/reports', async (req, res) => {
   try {
-    const { description, lat, lng } = req.body;
-    const newReport = new Report({ description, lat, lng });
+    const { description, lat, lng, photoUrl } = req.body;
+    const newReport = new Report({ description, lat, lng, photoUrl });
     await newReport.save();
     res.status(201).json(newReport);
   } catch (error) {
