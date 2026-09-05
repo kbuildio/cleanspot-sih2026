@@ -22,7 +22,7 @@
 
     header div.header-text { flex: 1; }
 
-    #authorityToggle {
+    #authorityToggle, #locateBtn {
       background-color: white;
       color: #2e7d32;
       border: none;
@@ -30,6 +30,7 @@
       border-radius: 4px;
       cursor: pointer;
       font-weight: bold;
+      margin-left: 8px;
     }
 
     #authorityToggle.active {
@@ -37,7 +38,32 @@
       color: white;
     }
 
-    #map { height: 85vh; width: 100%; }
+    #map { height: 85vh; width: 100%; position: relative; }
+
+    #statsPanel {
+      position: fixed;
+      top: 100px;
+      right: 20px;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+      padding: 14px 18px;
+      z-index: 1000;
+      font-size: 14px;
+      min-width: 160px;
+    }
+
+    #statsPanel h3 {
+      margin: 0 0 8px 0;
+      font-size: 15px;
+      color: #2e7d32;
+    }
+
+    #statsPanel div { margin-bottom: 4px; }
+
+    #statsPanel .stat-red { color: #e53935; font-weight: bold; }
+    #statsPanel .stat-yellow { color: #b8860b; font-weight: bold; }
+    #statsPanel .stat-green { color: #2e7d32; font-weight: bold; }
 
     .report-form textarea { width: 180px; margin-bottom: 8px; }
 
@@ -61,9 +87,19 @@
       <p>See it. Report it. Resolve it. (Click anywhere on the map to report)</p>
     </div>
     <button id="authorityToggle">Login as Authority</button>
+    <button id="locateBtn">📍 Locate Me</button>
   </header>
 
   <div id="map"></div>
+
+  <div id="statsPanel">
+    <h3>CleanSpot Stats</h3>
+    <div>Total reports: <span id="statTotal">-</span></div>
+    <div>Resolved: <span id="statResolved">-</span></div>
+    <div class="stat-red">Red hotspots: <span id="statRed">-</span></div>
+    <div class="stat-yellow">Yellow areas: <span id="statYellow">-</span></div>
+    <div class="stat-green">Green areas: <span id="statGreen">-</span></div>
+  </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
@@ -141,6 +177,23 @@
       }
     }
 
+    // --- NEW: turns unresolved report count into a shade of red — more
+    // reports piling up in one spot = darker red, simple and predictable.
+    const SEVERITY_MAX_COUNT = 8;  // unresolved reports at which it hits the darkest shade
+
+    function getRedShade(unresolvedCount) {
+      const lightRed = { r: 255, g: 205, b: 210 };  // just crossed into RED (3 reports)
+      const darkRed  = { r: 165, g: 20,  b: 20  };  // heavily reported, deep red
+
+      const severity = Math.min(unresolvedCount / SEVERITY_MAX_COUNT, 1);
+
+      const r = Math.round(lightRed.r + (darkRed.r - lightRed.r) * severity);
+      const g = Math.round(lightRed.g + (darkRed.g - lightRed.g) * severity);
+      const b = Math.round(lightRed.b + (darkRed.b - lightRed.b) * severity);
+
+      return `rgb(${r}, ${g}, ${b})`;
+    }
+
     async function loadAreaStatus() {
       try {
         const response = await fetch(`${API_URL}/status`);
@@ -148,7 +201,7 @@
 
         areas.forEach((area) => {
           let color = '#fdd835';  // YELLOW default
-          if (area.status === 'RED') color = '#e53935';
+          if (area.status === 'RED') color = getRedShade(area.unresolvedCount);
           if (area.status === 'GREEN') color = '#43a047';
 
           L.circle([area.lat, area.lng], {
@@ -173,12 +226,40 @@
       }
     }
 
+    // --- NEW: fetch reports + status, and update the stats panel numbers ---
+    async function updateStatsPanel() {
+      try {
+        const [reportsRes, statusRes] = await Promise.all([
+          fetch(`${API_URL}/reports`),
+          fetch(`${API_URL}/status`)
+        ]);
+
+        const reports = await reportsRes.json();
+        const areas = await statusRes.json();
+
+        const totalReports = reports.length;
+        const resolvedCount = reports.filter((r) => r.resolved).length;
+        const redCount = areas.filter((a) => a.status === 'RED').length;
+        const yellowCount = areas.filter((a) => a.status === 'YELLOW').length;
+        const greenCount = areas.filter((a) => a.status === 'GREEN').length;
+
+        document.getElementById('statTotal').textContent = totalReports;
+        document.getElementById('statResolved').textContent = resolvedCount;
+        document.getElementById('statRed').textContent = redCount;
+        document.getElementById('statYellow').textContent = yellowCount;
+        document.getElementById('statGreen').textContent = greenCount;
+      } catch (error) {
+        console.log('Could not update stats panel', error);
+      }
+    }
+
     // --- NEW: clears everything currently drawn, then reloads it fresh from the backend ---
     function refreshEverything() {
       reportLayer.clearLayers();
       statusLayer.clearLayers();
       loadExistingReports();
       loadAreaStatus();
+      updateStatsPanel();
     }
 
     refreshEverything();  // initial load when the page opens
@@ -189,6 +270,25 @@
       this.classList.toggle('active', isAuthority);
       this.textContent = isAuthority ? 'Authority Mode: ON' : 'Login as Authority';
       refreshEverything();  // redraw so Resolve buttons appear/disappear correctly
+    });
+
+    // --- NEW: ask the browser for the user's real GPS location, and center the map there ---
+    document.getElementById('locateBtn').addEventListener('click', function () {
+      if (!navigator.geolocation) {
+        alert('Your browser does not support location access.');
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        function (position) {
+          const userLat = position.coords.latitude;
+          const userLng = position.coords.longitude;
+          map.setView([userLat, userLng], 16);  // 16 = fairly close zoom, good for street-level reporting
+        },
+        function (error) {
+          alert('Could not get your location. Make sure location access is allowed for this site.');
+        }
+      );
     });
 
     map.on('click', function (e) {

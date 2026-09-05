@@ -93,7 +93,16 @@ function groupReportsIntoAreas(reports) {
     const avgLng = group.reduce((sum, r) => sum + r.lng, 0) / group.length;
 
     // Count how many reports in this group are still unresolved
-    const unresolvedCount = group.filter((r) => !r.resolved).length;
+    const unresolvedReports = group.filter((r) => !r.resolved);
+    const unresolvedCount = unresolvedReports.length;
+
+    // Find the OLDEST still-unresolved report in this group — this tells us
+    // how long the problem has been sitting without authority action.
+    let hoursUnresolved = 0;
+    if (unresolvedReports.length > 0) {
+      const oldestTimestamp = Math.min(...unresolvedReports.map((r) => new Date(r.createdAt).getTime()));
+      hoursUnresolved = (Date.now() - oldestTimestamp) / (1000 * 60 * 60);
+    }
 
     // If every report in the group has been resolved, the area is GREEN.
     // Otherwise, status depends on how many are still unresolved.
@@ -106,6 +115,7 @@ function groupReportsIntoAreas(reports) {
       lng: avgLng,
       count: group.length,
       unresolvedCount: unresolvedCount,
+      hoursUnresolved: hoursUnresolved,
       status: status
     });
   });
