@@ -82,7 +82,42 @@
       }
     }
 
+    // --- NEW: ask the backend for grouped area statuses, and draw a colored circle for each ---
+    async function loadAreaStatus() {
+      try {
+        const response = await fetch(`${API_URL}/status`);
+        const areas = await response.json();
+
+        areas.forEach((area) => {
+          // Pick a color based on the status the backend calculated
+          const color = area.status === 'RED' ? '#e53935' : '#fdd835';
+
+          L.circle([area.lat, area.lng], {
+            radius: 50,         // matches GROUPING_RADIUS_METERS on the backend
+            color: color,
+            fillColor: color,
+            fillOpacity: 0.25,
+            interactive: false   // lets map clicks pass through the circle instead of being absorbed by it
+          })
+            .addTo(map);
+
+          // A small clickable dot at the center, just to show status info without blocking the whole area
+          L.circleMarker([area.lat, area.lng], {
+            radius: 6,
+            color: color,
+            fillColor: color,
+            fillOpacity: 1
+          })
+            .addTo(map)
+            .bindPopup(`<strong>${area.status}</strong><br>${area.count} report(s) in this area`);
+        });
+      } catch (error) {
+        console.log('Could not load area status — is the backend server running?', error);
+      }
+    }
+
     loadExistingReports();   // runs immediately when the page opens
+    loadAreaStatus();        // runs immediately too, draws the colored zones
 
     // Click-to-report, same as before, but the submit button now saves for real
     map.on('click', function (e) {
@@ -120,6 +155,9 @@
             // Only draw the marker once the backend confirms it was saved
             addReportMarker(savedReport);
             map.closePopup();
+
+            // Recalculate area status now that a new report exists
+            loadAreaStatus();
           } catch (error) {
             alert('Could not save report — is the backend server running?');
           }

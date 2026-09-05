@@ -7,20 +7,13 @@ const cors = require('cors');
 const app = express();
 const PORT = 3000;
 
-app.use(express.json());   // lets the server understand JSON sent to it
-app.use(cors());           // allows the frontend (different address) to talk to this server
+app.use(express.json());
+app.use(cors());
 
-// Connect to MongoDB
 mongoose.connect(process.env.MONGO_URI)
-  .then(() => {
-    console.log('Connected to MongoDB successfully!');
-  })
-  .catch((error) => {
-    console.log('Failed to connect to MongoDB:', error.message);
-  });
+  .then(() => console.log('Connected to MongoDB successfully!'))
+  .catch((error) => console.log('Failed to connect to MongoDB:', error.message));
 
-// --- Define what a "Report" looks like in the database ---
-// This is called a "schema" — basically a blueprint for every report.
 const reportSchema = new mongoose.Schema({
   description: { type: String, required: true },
   lat: { type: Number, required: true },
@@ -28,36 +21,101 @@ const reportSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
-// Turn that blueprint into something we can actually use to save/read data.
 const Report = mongoose.model('Report', reportSchema);
 
-// --- Route 1: SAVE a new report ---
-// Triggered when the frontend sends a POST request to /reports
 app.post('/reports', async (req, res) => {
   try {
     const { description, lat, lng } = req.body;
-
     const newReport = new Report({ description, lat, lng });
-    await newReport.save();   // actually writes it into MongoDB
-
-    res.status(201).json(newReport);   // send the saved report back as confirmation
+    await newReport.save();
+    res.status(201).json(newReport);
   } catch (error) {
     res.status(500).json({ error: 'Failed to save report' });
   }
 });
 
-// --- Route 2: GET all reports ---
-// Triggered when the frontend sends a GET request to /reports
 app.get('/reports', async (req, res) => {
   try {
-    const reports = await Report.find();   // fetch everything saved so far
+    const reports = await Report.find();
     res.json(reports);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch reports' });
   }
 });
 
-// Simple homepage route, same as before
+// --- NEW: figure out how far apart two points are, in meters ---
+// This uses the "Haversine formula" — the standard way to measure
+// distance between two lat/lng points on a curved surface (the Earth).
+function distanceInMeters(lat1, lng1, lat2, lng2) {
+  const R = 6371000; // Earth's radius in meters
+  const toRad = (deg) => (deg * Math.PI) / 180;
+
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+// --- NEW: group nearby reports into "areas", and give each one a status ---
+const GROUPING_RADIUS_METERS = 50;
+
+function groupReportsIntoAreas(reports) {
+  const areas = [];       // will hold our final grouped areas
+  const visited = new Set();  // tracks which reports we've already placed in a group
+
+  reports.forEach((report, index) => {
+    if (visited.has(index)) return;  // already grouped, skip
+
+    // Start a new area with this report
+    const group = [report];
+    visited.add(index);
+
+    // Check every other report — if it's close enough, add it to this group
+    reports.forEach((other, otherIndex) => {
+      if (visited.has(otherIndex)) return;
+
+      const distance = distanceInMeters(report.lat, report.lng, other.lat, other.lng);
+      if (distance <= GROUPING_RADIUS_METERS) {
+        group.push(other);
+        visited.add(otherIndex);
+      }
+    });
+
+    // Find the average location of the group, so we know where to draw its circle
+    const avgLat = group.reduce((sum, r) => sum + r.lat, 0) / group.length;
+    const avgLng = group.reduce((sum, r) => sum + r.lng, 0) / group.length;
+
+    // Simple status rule for now — refine later
+    let status = 'YELLOW';
+    if (group.length >= 3) status = 'RED';
+
+    areas.push({
+      lat: avgLat,
+      lng: avgLng,
+      count: group.length,
+      status: status
+    });
+  });
+
+  return areas;
+}
+
+// --- NEW: route that returns the grouped area statuses ---
+app.get('/status', async (req, res) => {
+  try {
+    const reports = await Report.find();
+    const areas = groupReportsIntoAreas(reports);
+    res.json(areas);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to calculate status' });
+  }
+});
+
 app.get('/', (req, res) => {
   res.send('CleanSpot backend is running!');
 });
