@@ -13,14 +13,24 @@
     header {
       background-color: #2e7d32;
       color: white;
-      padding: 16px;
+      padding: 12px 16px;
       text-align: center;
       display: flex;
+      flex-wrap: wrap;
       justify-content: space-between;
       align-items: center;
+      gap: 8px;
     }
 
-    header div.header-text { flex: 1; }
+    header div.header-text { flex: 1; min-width: 200px; text-align: left; }
+    header div.header-text h1 { margin: 0; font-size: 20px; }
+    header div.header-text p { margin: 2px 0 0 0; font-size: 12px; }
+
+    header div.header-buttons {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
 
     #authorityToggle, #locateBtn {
       background-color: white;
@@ -30,7 +40,7 @@
       border-radius: 4px;
       cursor: pointer;
       font-weight: bold;
-      margin-left: 8px;
+      font-size: 13px;
     }
 
     #authorityToggle.active {
@@ -42,28 +52,46 @@
 
     #statsPanel {
       position: fixed;
-      top: 100px;
-      right: 20px;
+      top: 90px;
+      right: 12px;
       background: white;
       border-radius: 8px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.25);
-      padding: 14px 18px;
-      z-index: 1000;
-      font-size: 14px;
-      min-width: 160px;
+      padding: 10px 14px;
+      z-index: 999;
+      font-size: 13px;
+      min-width: 150px;
+      max-width: 45vw;
     }
 
     #statsPanel h3 {
-      margin: 0 0 8px 0;
-      font-size: 15px;
+      margin: 0 0 6px 0;
+      font-size: 14px;
       color: #2e7d32;
     }
 
-    #statsPanel div { margin-bottom: 4px; }
+    #statsPanel div { margin-bottom: 2px; }
 
     #statsPanel .stat-red { color: #e53935; font-weight: bold; }
     #statsPanel .stat-yellow { color: #b8860b; font-weight: bold; }
     #statsPanel .stat-green { color: #2e7d32; font-weight: bold; }
+
+    /* On small screens, header wraps to 2 rows (title, then buttons below) —
+       so we push the stats panel down further to clear that taller header. */
+    @media (max-width: 480px) {
+      header div.header-text { text-align: center; min-width: 100%; }
+      header div.header-buttons { width: 100%; justify-content: center; }
+
+      #statsPanel {
+        top: 128px;
+        right: 8px;
+        max-width: 42vw;
+        font-size: 11px;
+        padding: 8px 10px;
+      }
+
+      #statsPanel h3 { font-size: 12px; }
+    }
 
     .report-form textarea { width: 180px; margin-bottom: 8px; }
 
@@ -86,8 +114,10 @@
       <h1>CleanSpot</h1>
       <p>See it. Report it. Resolve it. (Click anywhere on the map to report)</p>
     </div>
-    <button id="authorityToggle">Login as Authority</button>
-    <button id="locateBtn">📍 Locate Me</button>
+    <div class="header-buttons">
+      <button id="authorityToggle">Login as Authority</button>
+      <button id="locateBtn">📍 Locate Me</button>
+    </div>
   </header>
 
   <div id="map"></div>
@@ -109,7 +139,7 @@
     const CLOUDINARY_CLOUD_NAME = 'bbfwd8ul';
     const CLOUDINARY_UPLOAD_PRESET = 'gpw8xhja';
 
-    const map = L.map('map').setView([26.8467, 80.9462], 13);
+    const map = L.map('map').setView([26.4974, 80.2650], 15); // Default center: CSJM University, Kanpur
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors'
